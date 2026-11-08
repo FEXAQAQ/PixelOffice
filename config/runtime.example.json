@@ -1,0 +1,7 @@
+{
+  "_comment": "畫面上的設定對 .env 的覆寫。這個檔由程式自動維護，通常不必手改；刪掉它就等於全部跟著 .env 走。",
+  "mode": "mock",
+  "accessMode": "auto",
+  "jiraBoardId": "",
+  "jev": "off"
+}

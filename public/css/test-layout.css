@@ -1,0 +1,43 @@
+/* Connection lab shares the dashboard's forest-green and warm-gold palette. */
+:root{--bg:#152023;--surface:#1c2b2b;--surface-2:#23392f;--surface-3:#304737;--border:#415649;--border-hi:#728361;--text:#e3e7d5;--text-2:#c2d0bc;--text-3:#a8bca9;--gold:#e4c98d;--blue:#8fc3b9;--green:#a1cf9e;--green-soft:#253e2e;--red-soft:#422a29;--fs-sm:13px;--fs-xs:12px;--fs-mono:12px}
+body{font-size:14px;min-height:100vh;background:radial-gradient(ellipse at top left,#2d4233 0,transparent 55%),var(--bg)}
+header{min-height:64px;padding:12px 24px;background:#152023;border-color:#455647;gap:12px}
+.pill{font:12px system-ui;padding:6px 9px;border:1px solid var(--border);background:#20322b}
+.back-link{font-size:13px;border:1px solid var(--border);border-radius:5px;padding:7px 12px;color:var(--text-2)}
+.back-link:hover{background:var(--surface-2);text-decoration:none}
+main{max-width:1440px;padding:26px 24px 32px;display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:20px;align-items:start}
+.page-intro{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:0 0 6px}
+.eyebrow{font:600 11px system-ui;letter-spacing:2px;color:var(--gold)}
+h1{font-size:var(--fs-title-page);line-height:1.5;margin:6px 0;color:#eee4c7}.page-intro p{margin:0;color:var(--text-3);font-size:13px}
+.lab-tag{border:1px solid #697957;color:var(--gold);padding:7px 14px;font-size:12px;white-space:nowrap;background:#293f31;border-radius:4px}
+.card{min-width:0;box-shadow:0 8px 24px #0d181c33;border-radius:8px}
+.card-head{min-height:58px;flex-wrap:wrap;padding:12px 16px;background:#20332d}
+.card-head .h{font-size:var(--fs-title-section);display:flex;gap:9px;align-items:center}
+.step{font:11px ui-monospace,monospace;border:1px solid #526649;color:#c5d2ac;padding:1px 5px}
+.card-body{padding:16px}.checks{gap:0;border:1px solid var(--border);background:none}
+.chk{grid-template-columns:22px minmax(0,1fr);gap:2px 9px;padding:11px 12px;border-bottom:1px solid #34483b}.chk:last-child{border-bottom:0}
+.chk .k{grid-column:2;color:var(--text-3);font:12px 'Noto Sans TC',system-ui}.chk .v{grid-column:2;overflow-wrap:anywhere;word-break:normal;line-height:1.7}
+.banner{font-size:13px;line-height:1.8}.banner.warn{background:#403c25;color:#e9d49e}.banner.bad{color:#f1c5bc}
+.conv{height:clamp(260px,38vh,480px);background:#15251f;padding:14px;gap:9px;scrollbar-color:#6b8061 #15251f}
+.ev{font-size:13px;line-height:1.8}.ev.tool{background:#1a2e25;border-color:#3b5142}.ev.tres{border-color:#4e6753}.ev.divider{font:11px system-ui;letter-spacing:.5px}
+.empty{padding:48px 16px;font-size:14px}.composer{gap:10px;margin-top:16px}.composer textarea{font-size:14px;background:#172820;min-height:88px;max-height:240px}
+.composer .hint{line-height:1.8;margin:0}.composer .row{gap:10px}.inp{font-size:13px;background:#172820}
+.btn{font:700 14px/1.4 'Noto Sans TC',system-ui;padding:9px 14px;min-height:40px}.btn.sm{font-size:13px;padding:7px 12px;min-height:36px}.btn.ghost{background:#293e30}.btn.danger{color:#edb2a6;border-color:#8b6053}
+.jev-test-box{margin-top:16px;padding:14px;border:1px solid #637b63;border-radius:8px;background:#1c3429}
+.jev-test-label{font:700 10px system-ui;letter-spacing:1.4px;color:var(--gold)}
+.jev-test-box h3{margin:3px 0 4px;color:#f2e4bf;font-size:16px}
+.jev-test-box p{margin:0 0 12px;color:var(--text-2);font-size:12px;line-height:1.6}
+.jev-test-box .btn{width:100%}
+.jev-test-box .jev-test-result{margin:10px 0 0;padding:8px 10px;border-radius:4px;background:#26392e;color:var(--text-2)}
+.jev-test-result.ok{background:#274733;color:#cfedc9}.jev-test-result.warn{background:#473f2a;color:#f0dca9}.jev-test-result.bad{background:#492e2b;color:#f5c7ba}
+#send{min-width:92px}.hint#sessinfo{overflow-wrap:anywhere;min-width:0;flex:0 1 auto}
+@media(max-width:900px){main{grid-template-columns:minmax(0,1fr);max-width:760px;padding:20px 16px}.page-intro{grid-column:1}.lab-tag{display:none}header{padding:12px 16px}header .grow{display:none}.back-link{margin-left:auto}.conv{height:340px}}
+@media(max-width:480px){h1{font-size:21px}#pills{order:3;width:100%}.card-body{padding:12px}.card-head{padding:10px 12px}.composer .row .grow{display:none}.composer .row #model{flex:1;min-width:90px;width:120px!important}.composer textarea{resize:vertical}}
+@media(min-width:901px) and (min-height:640px){
+ body{height:100dvh;min-height:0;display:flex;flex-direction:column;overflow:hidden}header{flex-shrink:0}
+ main{width:100%;min-height:0;flex:1;grid-template-rows:auto minmax(0,1fr);padding-top:18px;padding-bottom:18px}
+ .card{height:100%;min-height:0;display:flex;flex-direction:column}.card-head{flex-shrink:0}
+ .diagnostics-card .card-body{min-height:0;overflow:auto;scrollbar-color:#6b8061 #15251f}
+ .conversation-card .card-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+ .conv{height:auto;flex:1;min-height:120px}.composer{flex-shrink:0}.composer textarea{min-height:66px;max-height:120px}
+}

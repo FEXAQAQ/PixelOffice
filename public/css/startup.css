@@ -1,0 +1,40 @@
+.startup {
+  position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center;
+  background: #0a0b12; color: #e8eaf3; overflow: hidden;
+  background-image: radial-gradient(ellipse at center, #24253d 0%, #0a0b12 70%);
+  transition: opacity 320ms ease;
+}
+.startup.is-leaving { opacity: 0; pointer-events: none; }
+/* <head> 的同步腳本判定這次不播，遮罩連第一幀都不該出現。
+   用 data 屬性而非 class 掛在 <html>：.startup-* 是這裡的元件命名空間
+   （.startup-skip 就是下面那顆按鈕），根節點的狀態標記不該跟它們共用。 */
+[data-startup='played'] .startup { display: none; }
+.startup-scene { width: min(460px, calc(100vw - 48px)); text-align: center; animation: startup-arrive 450ms steps(8, end) both; }
+.startup-label { color: #aeb6d6; font: 8px/2 'Press Start 2P', monospace; letter-spacing: 2px; margin-bottom: 28px; }
+.startup-monitor { background: #35394f; border: 4px solid #676d88; padding: 16px 16px 10px; box-shadow: 8px 8px 0 #05060c, inset 4px 4px 0 #454b65; }
+.startup-screen { position: relative; background: #101e22; border: 4px solid #080e16; padding: 30px 16px 26px; text-align: left; overflow: hidden; }
+.startup-screen::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(transparent 0 3px, #00000020 3px 4px); }
+.startup-prompt { display: block; color: #83b5a5; font: 11px/1.6 monospace; margin-bottom: 25px; }
+.startup-greeting { width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; color: #b3f5bd; font: clamp(12px, 3.4vw, 23px)/1.8 'Press Start 2P', monospace; text-shadow: 2px 2px #356548; animation: startup-type 880ms steps(12, end) 350ms forwards; }
+.startup-cursor { animation: startup-blink 650ms steps(1, end) infinite; }
+.startup-meter { height: 8px; margin: 26px 0 14px; background: #243c3c; }
+.startup-meter span { display: block; height: 100%; width: 100%; clip-path: inset(0 100% 0 0); background: repeating-linear-gradient(to right, #9ce6ae 0 12px, #101e22 12px 16px); animation: startup-load 1850ms steps(16, end) 200ms forwards; }
+.startup-caption { color: #93b1ad; font: 11px/1.6 monospace; }
+.startup-led { width: 6px; height: 6px; margin: 10px 0 0 auto; background: #f7c948; box-shadow: 0 0 8px #f7c94860; }
+.startup-stand { width: 48px; height: 26px; background: #454b65; border: 4px solid #676d88; border-top: 0; margin: auto; }
+.startup-foot { width: 124px; height: 12px; background: #676d88; margin: auto; box-shadow: 4px 4px #05060c; }
+.startup-welcome { margin: 30px 0 0; color: #aeb6d6; font-size: 13px; letter-spacing: 2px; }
+.startup-skip { position: absolute; bottom: max(28px, env(safe-area-inset-bottom)); right: 28px; min-height: 40px; border: 1px solid #69708d; background: #191c2b; color: #f1f2f7; padding: 9px 14px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.startup-skip span { margin-left: 12px; color: #aeb6d6; font: 10px monospace; }
+.startup-skip:hover { border-color: #f7c948; }
+@keyframes startup-type { to { width: 100%; } }
+/* 用 clip-path 逐步露出而不是 scaleX：scaleX 會連方塊圖案一起壓扁，格子會從細變粗。 */
+@keyframes startup-load { to { clip-path: inset(0 0 0 0); } }
+@keyframes startup-blink { 50% { opacity: 0; } }
+@keyframes startup-arrive { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-height: 520px) { .startup-scene { transform: scale(.7); animation: none; } .startup-skip { bottom: 12px; right: 12px; } }
+@media (prefers-reduced-motion: reduce) {
+  .startup, .startup-scene, .startup-greeting, .startup-cursor, .startup-meter span { animation: none; transition: none; }
+  .startup-greeting { width: 100%; }
+  .startup-meter span { clip-path: none; }
+}

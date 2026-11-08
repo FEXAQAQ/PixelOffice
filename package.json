@@ -1,0 +1,31 @@
+{
+  "name": "pixeloffice",
+  "version": "1.0.0",
+  "description": "RPG 風格 AI 協作控制面板 — 透過像素風辦公室介面管理 PM Agent 與 3 位工程師 Agent，並讓工程師在背景執行 Claude Code CLI 自動開發、修改程式碼與跑測試。",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.cjs"
+  },
+  "keywords": [
+    "rpg",
+    "ai-agent",
+    "claude-code",
+    "dashboard",
+    "jira",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "socket.io": "^4.8.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

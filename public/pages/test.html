@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>連線測試 — PixelOffice</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+<script src="/socket.io/socket.io.js"></script>
+<link rel="stylesheet" href="/css/connection-test.css" />
+<link rel="stylesheet" href="/css/test-layout.css" />
+</head>
+<body>
+
+<header>
+  <span id="pills" class="row" style="gap:7px"></span>
+  <span class="grow"></span>
+  <a class="back-link" href="/">← 返回辦公室</a>
+</header>
+
+<main>
+  <div class="page-intro"><div><span class="eyebrow">CONNECTION LAB</span><h1>確認環境，開始協作</h1><p>先查看環境診斷，再送出一句訊息測試 AI 回應。</p></div><span class="lab-tag">連線診斷室</span></div>
+  <!-- 診斷 -->
+  <section class="card diagnostics-card" aria-label="環境診斷">
+    <div class="card-head">
+      <h2 class="h"><span class="step">01</span> 環境診斷</h2>
+      <span class="grow"></span>
+      <button class="btn ghost sm" id="redetect">重新偵測</button>
+    </div>
+    <div class="card-body">
+      <div id="banner"></div>
+      <div class="checks" id="checks"><div class="chk"><span class="i">⏳</span><span class="k">載入中…</span><span class="v"></span></div></div>
+      <div class="jev-test-box" id="jev-test-box" style="display:none">
+        <div><span class="jev-test-label">JEV API</span><h3>Jev 連線測試</h3><p>送出一個簡短的判定問題，確認 Jev API 是否能回應。</p></div>
+        <button class="btn ghost sm" id="jev-test">測試 Jev</button>
+        <p id="jev-test-result" class="jev-test-result" role="status">尚未測試</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 對話 -->
+  <section class="card conversation-card" aria-label="測試對話">
+    <div class="card-head">
+      <h2 class="h"><span class="step">02</span> 測試對話</h2>
+      <span class="grow"></span>
+      <span class="hint" id="sessinfo"></span>
+      <button class="btn ghost sm" id="reset">開新對話</button>
+    </div>
+    <div class="card-body">
+      <div class="conv" id="conv"><div class="empty">送一句話出去，確認 AI 真的會回應。</div></div>
+
+      <div class="composer">
+        <label class="hint" for="msg">測試訊息</label>
+        <textarea id="msg" placeholder="例如：回我一句「連線正常」就好" rows="3"></textarea>
+        <div class="row">
+          <label class="hint" for="model">模型</label>
+          <input id="model" class="inp mono" list="modelopts" placeholder="預設" style="width:180px" spellcheck="false" />
+          <datalist id="modelopts"></datalist>
+          <span class="grow"></span>
+          <button class="btn danger sm" id="stop" disabled>■ 停止</button>
+          <button class="btn" id="send">送出</button>
+        </div>
+        <p class="hint">
+          對話在暫存工作目錄執行，不核准檔案修改，僅用於測試回應。
+          後續訊息會延續同一段對話；按「開新對話」可重新開始。
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/js/connection-test.js"></script>
+</body>
+</html>

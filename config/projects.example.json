@@ -1,0 +1,20 @@
+{
+  "_comment": "專案路徑與自動開發設定的範本。commands 是工程師在自動模式下唯一能執行的命令清單（它靠這些自行建置與測試），不是驗證門檻；是否提交與推送一律由使用者決定。自動分支會先更新 baseBranch（預設 develop）。複製成 projects.json 後，用畫面上的「設定」新增專案即可（也可以直接改這裡）。路徑用正斜線 / 或雙反斜線 \\ 都可以。",
+  "projects": [
+    {
+      "id": "p_example",
+      "name": "我的專案",
+      "path": "C:/path/to/your/project",
+      "type": "後端",
+      "automation": {
+        "enabled": false,
+        "commands": [
+          "dotnet build",
+          "dotnet test"
+        ],
+        "timeoutMinutes": 30,
+        "baseBranch": "develop"
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="600" viewBox="0 0 1440 600" shape-rendering="crispEdges">
+  <defs>
+    <pattern id="pavers" width="40" height="32" patternUnits="userSpaceOnUse"><path fill="#a0aaa9" d="M0 0h40v32H0z"/><path fill="#b3bbba" d="M1 1h38v14H1zM1 17h18v14H1zM21 17h18v14H21z"/></pattern>
+    <pattern id="roof" width="20" height="20" patternUnits="userSpaceOnUse"><path fill="#667b84" d="M0 0h20v20H0z"/><path fill="#71868e" d="M1 1h18v18H1z"/></pattern>
+    <pattern id="windows" width="32" height="24" patternUnits="userSpaceOnUse"><path fill="#596f7c" d="M0 0h32v24H0z"/><path fill="#a2bdc3" d="M6 3h17v13H6z"/><path fill="#d6e1d2" d="M7 3h3v12H7z"/><path fill="#3e5565" d="M5 17h20v3H5z"/></pattern>
+    <g id="tree"><path fill="#41585b" opacity=".3" d="M-25 19h64v20h-64z"/><path fill="#d1c9b2" d="M-24 4h48v30h-48z"/><path fill="#516957" d="M-20 7h40v22h-40z"/><path fill="#846c51" d="M-3-4h6v24h-6z"/><path fill="#416e60" d="M-16-38h32v7h12v12h6V4H20v11h-40V4h-14v-23h6v-12h12z"/><path fill="#648d71" d="M-16-36h29v7h12v20H12V2h-30v-8h-12v-13h10v-10h4z"/><path fill="#92ac80" d="M-14-34H9v5h-23zM-23-24h12v5h-12z"/></g>
+    <g id="car"><path fill="#283e49" opacity=".4" d="M4 4h47v86H4z"/><path fill="#293e49" d="M-3 12h6v15h-6zM39 12h6v15h-6zM-3 58h6v15h-6zM39 58h6v15h-6z"/><path fill="currentColor" d="M6 0h30v4h6v77h-6v5H6v-5H0V4h6z"/><path fill="#d8e1d7" d="M5 5h32v4H5z"/><path fill="#314c5d" d="M5 20h32v17H5zM5 61h32v13H5z"/><path fill="#8ca9b2" d="M7 22h28v3H7z"/><path fill="#ecdaa8" d="M3 2h8v4H3zM31 2h8v4h-8z"/><path fill="#ac6861" d="M3 79h8v3H3zM31 79h8v3h-8z"/></g>
+    <g id="ac"><path fill="#374c59" opacity=".3" d="M4 5h42v27H4z"/><path fill="#c0c9c7" d="M0 0h42v26H0z"/><path fill="#dce0d5" d="M0 0h42v4H0z"/><path stroke="#7d8f92" stroke-width="2" d="M6 8h21m-21 4h21m-21 4h21m-21 4h21"/><path fill="#667d84" d="M32 7h5v14h-5z"/></g>
+    <g id="bench"><path fill="#52646a" d="M4 6h5v23H4zM55 6h5v23h-5z"/><path fill="#ad8769" d="M0 0h64v7H0zM0 10h64v7H0zM-3 20h70v6H-3z"/><path fill="#d0ad83" d="M0 0h64v2H0zM-3 20h70v2H-3z"/></g>
+  </defs>
+  <path fill="url(#pavers)" d="M0 0h1440v600H0z"/>
+  <!-- A small city block: two quiet streets frame the central studio plaza. -->
+  <path fill="#d2d3c6" d="M227 0h139v600H227zM1074 0h141v600h-141zM0 473h1440v127H0z"/>
+  <path fill="#43535f" d="M237 0h119v600H237zM1084 0h121v600h-121zM0 483h1440v107H0z"/>
+  <path fill="#6e7b80" d="M239 0h2v480h-2zM1086 0h2v480h-2zM0 486h1440v2H0zM0 585h1440v2H0z"/>
+  <path stroke="#b7b7a0" stroke-width="3" stroke-dasharray="20 24" d="M297 0v452m847-452v452M0 537h218m158 0h690m158 0h216"/>
+  <g fill="#d9dbcf"><path d="M247 428h22v9h-22zM279 428h22v9h-22zM311 428h22v9h-22zM247 444h22v9h-22zM279 444h22v9h-22zM311 444h22v9h-22z"/><path d="M1097 432h94v8h-94zM1097 448h94v8h-94zM1097 464h94v8h-94zM375 497h9v77h-9zM392 497h9v77h-9zM409 497h9v77h-9zM1032 497h9v77h-9zM1049 497h9v77h-9z"/></g>
+  <!-- West: layered rooftops, ventilators, windows and a striped cafe canopy. -->
+  <path fill="#334953" opacity=".35" d="M0 36h213v297H0z"/>
+  <path fill="url(#windows)" d="M-20 196h209v112H-20z"/>
+  <path fill="#c4b9a8" d="M-20 14h214v198H-20z"/><path fill="#e0d7be" d="M-20 14h214v7H-20z"/>
+  <path fill="#4d626c" d="M-8 28h189v171H-8z"/><path fill="url(#roof)" d="M0 36h173v154H0z"/>
+  <path fill="#94a3a3" d="M15 53h65v69H15z"/><path fill="#b3bfba" d="M15 53h65v5H15z"/>
+  <use href="#ac" x="26" y="68"/><use href="#ac" x="113" y="146"/>
+  <path fill="#3e5d69" d="M111 48h47v62h-47z"/><path fill="#7fa1ad" d="M115 52h39v54h-39z"/><path stroke="#c2d0c9" stroke-width="2" d="M128 52v54m13-54v54m-26-37h39m-39 18h39"/>
+  <path fill="#364f5c" d="M12 252h157v56H12z"/><path fill="#abc3c2" d="M18 258h45v44H18zM74 258h42v44H74zM127 258h35v44h-35z"/>
+  <path fill="#c27e69" d="M5 232h171v24H5z"/><path fill="#eed5b1" d="M5 232h19v24H5zM43 232h19v24H43zM81 232h19v24H81zM119 232h19v24h-19zM157 232h19v24h-19z"/>
+  <path fill="#344c51" d="M13 328h48v31H13z"/><path fill="#c3b18d" d="M18 333h38v18H18z"/>
+  <use href="#bench" x="90" y="355"/><use href="#tree" x="184" y="390"/><use href="#tree" x="47" y="418"/>
+  <!-- East: terracotta apartments and a planted roof terrace. -->
+  <path fill="#354b59" opacity=".35" d="M1242 42h198v340h-198z"/>
+  <path fill="#a77f73" d="M1234 190h206v165h-206z"/><path fill="url(#windows)" d="M1247 206h193v125h-193z"/>
+  <path fill="#d2b59a" d="M1226 24h214v177h-214z"/><path fill="#ead4ae" d="M1226 24h214v7h-214z"/><path fill="#7d8d86" d="M1238 38h202v149h-202z"/>
+  <path fill="#9baa95" d="M1246 46h194v133h-194z"/>
+  <path fill="#c2b58e" d="M1261 62h141v47h-141z"/><path fill="#59775e" d="M1265 66h133v39h-133z"/><path fill="#7f9b72" d="M1270 70h122v17h-122z"/>
+  <use href="#ac" x="1371" y="139"/><use href="#bench" x="1266" y="138"/>
+  <path fill="#658879" d="M1250 345h177v10h-177z"/><path fill="#e0cba5" d="M1250 355h177v5h-177z"/>
+  <use href="#tree" x="1267" y="409"/><use href="#bench" x="1340" y="422"/>
+  <!-- The studio sits in a restrained stone plaza with planted edges. -->
+  <path fill="#879794" d="M387 24h663v431H387z"/><path fill="#bdc3b5" d="M395 32h647v415H395z"/>
+  <path fill="#9fab9e" d="M407 44h623v391H407z"/>
+  <path fill="#d4d2bd" d="M376 463h688v5H376z"/>
+  <use href="#tree" x="401" y="80"/><use href="#tree" x="1038" y="80"/><use href="#tree" x="403" y="406"/><use href="#tree" x="1037" y="406"/>
+  <use href="#car" x="253" y="131" color="#d3ad78"/><use href="#car" x="309" y="318" color="#8baeb5"/><use href="#car" x="1160" y="193" color="#b98579"/>
+  <g transform="translate(742 556) rotate(-90)"><use href="#car" color="#bdc5b2"/></g>
+  <path fill="#2f4855" d="M216 391h5v63h-5zM1062 391h5v63h-5z"/><path fill="#dce1d0" d="M202 386h21v6h-21zM1048 386h21v6h-21z"/>
+  <path fill="#708577" d="M0 593h1440v7H0z"/>
+</svg>

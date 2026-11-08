@@ -1,0 +1,23 @@
+{
+  "_comment": "工程師名單的範本。複製成 engineers.json，或直接用畫面右上角的 ⚙ 設定 增刪；model / codexModel 留空時使用對應 CLI 的預設模型。",
+  "engineers": [
+    {
+      "id": "devA",
+      "name": "Dev A",
+      "model": "",
+      "codexModel": ""
+    },
+    {
+      "id": "devB",
+      "name": "Dev B",
+      "model": "",
+      "codexModel": ""
+    },
+    {
+      "id": "devC",
+      "name": "Dev C",
+      "model": "",
+      "codexModel": ""
+    }
+  ]
+}

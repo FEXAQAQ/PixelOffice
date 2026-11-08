@@ -1,0 +1,29 @@
+# 環境變數（含 Jira API Token，絕對不要進版控）
+.env
+.env.local
+
+# 相依套件
+node_modules/
+
+# 執行期資料：接取的工單與 log、驗收後的工作日誌
+task/
+note/
+
+# 個人環境設定：由畫面上的「設定」寫入，內含本機路徑與看板 ID，不該跟著專案走。
+# 範本在同目錄的 *.example.json；檔案不存在時程式會用預設值，不影響啟動。
+config/projects.json
+config/runtime.json
+config/ai.json
+config/engineers.json
+config/roles.json
+
+# 工具設定：Claude Code 桌面版的預覽啟動設定（app 不讀它）
+.claude/
+
+# OS / 編輯器
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.log

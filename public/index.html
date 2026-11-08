@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PixelOffice</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="/css/dashboard.css" />
+<link rel="stylesheet" href="/css/office.css" />
+<link rel="stylesheet" href="/css/office-scene.css" />
+<link rel="stylesheet" href="/css/dashboard-layout.css" />
+<link rel="stylesheet" href="/css/startup.css" />
+<script>
+  // 這段必須同步跑在 <head>：startup.js 是 defer，等它執行時遮罩已經畫出去一幀了，
+  // 回訪重整就會看到開場「閃一下」才消失。先在這裡標記，讓 CSS 從頭就擋掉。
+  //
+  // 開場動畫只在「這個分頁第一次進辦公室」時播。子頁面（連線測試、素材檢查）的
+  // 「返回辦公室」是連到 /，等於整頁重新載入 —— 沒有這道記號的話，每次返回都會
+  // 再看一次 Hello world。用 sessionStorage：關掉分頁就重置，下次真的重開還是有開場。
+  try {
+    if (sessionStorage.getItem('pixeloffice:startup-played') === '1'
+        || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.documentElement.dataset.startup = 'played';
+    }
+  } catch (_) {}
+</script>
+<script src="/js/startup.js" defer></script>
+</head>
+
+<body>
+<section id="startup" class="startup" aria-label="歡迎來到 PixelOffice">
+  <div class="startup-scene" aria-hidden="true">
+    <div class="startup-label">PIXEL OFFICE / BOOT SEQUENCE</div>
+    <div class="startup-monitor">
+      <div class="startup-screen">
+        <span class="startup-prompt">&gt; welcome.exe</span>
+        <div class="startup-greeting">Hello world<span class="startup-cursor">_</span></div>
+        <div class="startup-meter"><span></span></div>
+        <span class="startup-caption">A new day. A new possibility.</span>
+      </div>
+      <div class="startup-led"></div>
+    </div>
+    <div class="startup-stand"></div>
+    <div class="startup-foot"></div>
+    <p class="startup-welcome">今天，也一起把想法變成現實。</p>
+  </div>
+  <button class="startup-skip" type="button">跳過開場 <span>ESC ↵</span></button>
+</section>
+<div id="app" v-cloak>
+  <!-- ============ 頂部狀態列 ============ -->
+  <header class="topbar">
+    <div class="brand"><span class="logo guild-mark" aria-hidden="true">☕</span><span>PixelOffice</span></div>
+    <div class="topbar-spacer"></div>
+    <span class="pill" :class="connectPill">
+      <span class="dot"></span>{{ connectLabel }}
+    </span>
+    <span class="pill" :class="sys.jiraMode === 'mock' ? 'warn' : 'ok'">
+      <span class="dot"></span>Jira <b>{{ sys.jiraMode || '—' }}</b>
+    </span>
+    <span class="pill" :class="sys.aiMode === 'mock' ? 'warn' : 'ok'">
+      <span class="dot"></span>{{ sys.aiProvider==='codex' ? 'Codex' : 'Claude' }} <b>{{ sys.aiMode || '—' }}</b>
+    </span>
+    <a class="icon-btn" href="/test.html" style="margin-left:4px;text-decoration:none"
+       title="連線測試：確認所選 AI 平台有沒有通" aria-label="連線測試">🔌</a>
+    <button class="icon-btn" style="margin-left:4px" @click="openSettings" title="設定" aria-label="設定">⚙</button>
+  </header>
+
+  <div v-if="connectState === 'offline'" class="offline-banner">⚠ 與伺服器的連線中斷，正在嘗試重新連線…</div>
+
+  <main class="layout" :data-view="mainView">
+    <nav class="workspace-nav" aria-label="工作區切換">
+      <button class="workspace-tab queue-tab" :aria-pressed="mainView==='queue'" @click="mainView='queue'">待指派 <span>{{board.length}}</span></button>
+      <button class="workspace-tab" :aria-pressed="mainView==='studio' || (mainView==='queue' && !compactLayout)" @click="mainView='studio'">辦公室</button>
+      <button class="workspace-tab" :aria-pressed="mainView==='tasks'" @click="mainView='tasks'">任務追蹤 <span v-if="runningCount">{{runningCount}} 執行中</span></button>
+      <button class="workspace-tab" :aria-pressed="mainView==='reports'" @click="mainView='reports'">回報 <span>{{pmLogs.length}}</span></button>
+      <button class="workspace-tab" @click="openWorkLog()">工作日誌</button>
+    </nav>
+    <!-- ============ 左欄 ============ -->
+    <div class="col">
+
+      <!-- 辦公室 -->
+      <section class="card office-card" v-show="mainView==='studio' || mainView==='queue'" aria-label="辦公室">
+        <office-scene :tasks="visibleTasks" :engineers="engineerList" :selected="effectiveTab" :connect-state="connectState" :visible="mainView==='studio' || mainView==='queue'" @select="inspectEngineer" :roles="roles" @role-action="runRoleAction" @toast="toast"></office-scene>
+      </section>
+
+      <!-- 任務刊版 -->
+      <section class="card board-card" aria-label="待指派任務看板">
+        <div class="card-head">
+          <span class="card-title">待指派任務</span>
+          <span class="grow"></span>
+          <span class="count">{{ board.length }}</span>
+        </div>
+        <div class="queue-actions"><button class="btn" @click="openClaim()">＋ 接取 Jira 任務</button><p>接取委託 → 選擇工程師 → 開始執行</p></div>
+        <div class="card-body">
+          <div v-if="board.length===0" class="empty">
+            <div class="ei">📋</div>
+            <div class="eh">目前沒有待指派任務</div>
+            <div class="ed">接取 Jira 任務後，在這裡選擇工程師與專案開始工作。</div>
+          </div>
+          <div v-else class="list scroll">
+            <div v-for="t in board" :key="t.key" class="tile">
+              <button class="tile-main" @click="openAssign(t)" :aria-label="'指派任務 ' + t.key">
+                <span class="tile-top"><span class="key">{{ t.key }}</span></span>
+                <span class="tile-title">{{ t.summary }}</span>
+                <span class="tile-foot">{{ taskStatusLabel(t.status, t.archived) }}<span v-if="t.sprint">{{ t.sprint.name }} · #{{ t.sprint.id }}</span></span>
+                <span class="tile-foot">
+                  <span>接取於 {{ ago(t.claimedAt) }}</span>
+                  <span class="tile-cta">指派 →</span>
+                </span>
+              </button>
+              <button class="tile-del" @click="confirmKey = t.key"
+                      title="放棄這張任務" :aria-label="'放棄任務 ' + t.key">✕</button>
+
+              <div v-if="confirmKey === t.key" class="confirm">
+                <span class="ctext">
+                  放棄 <b>{{ t.key }}</b>？會從刊版移除並刪除 task 檔案。
+                  Jira 上的單不受影響，仍是未指派狀態，之後可以再接取回來。
+                </span>
+                <span class="cbtns">
+                  <button class="btn ghost sm" @click="confirmKey = null">取消</button>
+                  <button class="btn danger sm" @click="removeTask(t.key)">確定放棄</button>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ 右欄 ============ -->
+    <div class="col">
+
+      <!-- 執行中任務（主角面板） -->
+      <section class="card hero active-card" v-show="mainView==='tasks'" aria-label="任務追蹤">
+        <!-- 每位工程師一個固定分頁：同時只顯示一個 Terminal，避免多人同跑時互相擠壓 -->
+        <div class="tabs" role="tablist">
+          <button v-for="e in engineerList" :key="e.id" class="tab"
+                  :class="{ on: effectiveTab===e.id }" role="tab" :aria-selected="effectiveTab===e.id"
+                  @click="switchTab(e.id)">
+            <pixel-agent class="portrait" :variant="idxOf(e.id)+1" :look="e.look"></pixel-agent><span class="tdot" :class="tabState(e.id)"></span>
+            <span class="tinfo">
+              <span class="tname">{{ e.name }}</span>
+              <span class="tsub">{{ tabSub(e.id) }}</span>
+            </span>
+            <span class="ask-badge" v-if="engineerHasQuestion(e.id)" title="有問題等你回答">❓</span>
+            <span class="unread" v-else-if="unread[e.id] && effectiveTab!==e.id" title="有新輸出"></span>
+          </button>
+        </div>
+
+        <div class="card-body">
+          <div v-if="!currentTask" class="empty">
+            <div class="empty-terminal" aria-hidden="true">&gt;_</div>
+            <div class="eh">{{ tabEngineerName }} 目前沒有任務</div>
+            <div class="ed">從「待指派任務」選擇一張卡片，指派工程師與專案後即可開始。</div>
+          </div>
+
+          <template v-else>
+            <div class="taskinfo" :class="currentTask.status">
+              <div class="tile-top">
+                <span class="st-dot"></span>
+                <span class="key">{{ currentTask.key }}</span>
+                <span class="elapsed">{{ elapsed(currentTask) }}</span>
+                <span>{{ taskStatusLabel(currentTask.phase==='developing' ? 'in_progress' : currentTask.phase || currentTask.status) }}</span>
+                <span v-if="currentTask.status==='done'" style="color:var(--green);font-size:var(--fs-xs)">✔ 完成</span>
+                <span v-if="currentTask.status==='failed'" style="color:var(--red);font-size:var(--fs-xs)">✖ 失敗</span>
+                <span v-if="currentTask.status==='aborted'" style="color:var(--amber);font-size:var(--fs-xs)">■ 已中止</span>
+              </div>
+              <div class="task-title">{{ currentTask.summary }}</div>
+              <div class="metas">
+                <span class="meta"><span class="swatch" :style="{background:engColor(currentTask.engineerId)}"></span>{{ currentTask.engineerName }}</span>
+                <span class="meta" v-if="currentTask.projectName">📁 {{ currentTask.projectName }}</span>
+                <span class="meta mono" v-if="currentTask.branch">🌿 {{ currentTask.branch }}</span>
+                <span class="meta mono" v-if="currentTask.model">🤖 {{ currentTask.model }}</span>
+                <span class="meta mono" v-if="currentTask.costUsd != null">💲 {{ currentTask.costUsd.toFixed(4) }}</span>
+              </div>
+            </div>
+
+            <!-- 對話串佔滿剩餘高度 -->
+            <div class="term-wrap fill">
+              <div class="term-bar">
+                <span>對話</span>
+                <span class="grow"></span>
+                <button v-if="currentTask.status==='running'" class="tbtn stop"
+                        @click="stopAsk = currentTask.cardId">■ 中止</button>
+                <button class="tbtn" :class="{on:autoscroll[currentTask.cardId]!==false}"
+                        @click="toggleAuto(currentTask.cardId)">自動捲動</button>
+                <button class="tbtn" @click="copyLog(currentTask.cardId)">複製</button>
+              </div>
+
+              <div class="conv" :ref="el => setTermRef(currentTask.cardId, el)"
+                   @scroll="onTermScroll(currentTask.cardId, $event)">
+
+                <div v-if="stopAsk === currentTask.cardId" class="stopbar">
+                  <span>中止 {{ currentTask.key }}？工程師會停下來，這張單會退回刊版可以重新指派。</span>
+                  <span class="grow"></span>
+                  <button class="btn ghost sm" @click="stopAsk = null">取消</button>
+                  <button class="btn danger sm" :disabled="stopping" @click="stopTask(currentTask.cardId)">
+                    {{ stopping ? '中止中…' : '確定中止' }}
+                  </button>
+                </div>
+
+                <template v-for="ev in (logs[currentTask.cardId] || [])" :key="ev.seq">
+                  <!-- 一次執行的開頭 -->
+                  <div v-if="ev.kind==='assign'" class="ev run">
+                    <span>▶ {{ ev.engineerName }} · {{ ev.projectName }}</span>
+                  </div>
+
+                  <!-- 使用者的驗收意見 -->
+                  <div v-else-if="ev.kind==='feedback'" class="ev say" style="border-left-color:var(--gold)">
+                    <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:var(--gold);display:block;margin-bottom:5px">你的驗收意見</span>{{ ev.text }}</div>
+
+                  <!-- 啟動：把真正送進去的指令與工單內容攤開，點了才展開 -->
+                  <div v-else-if="ev.kind==='launch'" class="ev tool" :class="{open:opened[ev.seq]}"
+                       @click="opened[ev.seq] = !opened[ev.seq]">
+                    <span class="ti">🚀</span>
+                    <span class="tn">送出工單</span>
+                    <span class="ta">{{ opened[ev.seq] ? (ev.bin + ' ' + (ev.args||[]).join(' ') + '\n\n— stdin (' + ev.promptChars + ' 字元) —\n' + ev.text) : (ev.promptChars + ' 字元 · 點開看實際送出的內容') }}</span>
+                  </div>
+
+                  <div v-else-if="ev.kind==='system'" class="ev sys" :class="{warn: ev.subtype==='abort' || ev.subtype==='api_retry'}">
+                    <template v-if="ev.subtype==='init'">
+                      <b>{{ ev.provider==='codex' ? 'Codex' : 'Claude' }} 已啟動</b><span>{{ ev.model }}</span>
+                      <span v-if="ev.toolCount">· {{ ev.toolCount }} 個工具</span>
+                    </template>
+                    <template v-else-if="ev.subtype==='api_retry'">
+                      <b>API 重試</b><span>第 {{ ev.attempt }}/{{ ev.maxRetries }} 次 · {{ ev.error }}</span>
+                    </template>
+                    <template v-else><span>{{ ev.text }}</span></template>
+                  </div>
+
+                  <div v-else-if="ev.kind==='thinking'" class="ev think"
+                       :class="{clipped: !opened[ev.seq]}" @click="opened[ev.seq] = !opened[ev.seq]">
+                    <span class="lead">{{ ev.text }}</span>
+                  </div>
+
+                  <div v-else-if="ev.kind==='text'" class="ev say" :class="{sub: ev.parentId}">{{ ev.text }}</div>
+
+                  <div v-else-if="ev.kind==='tool_use'" class="ev tool" :class="{open:opened[ev.seq]}"
+                       @click="opened[ev.seq] = !opened[ev.seq]">
+                    <span class="ti">{{ toolIcon(ev.name) }}</span>
+                    <span class="tn">{{ ev.name }}</span>
+                    <span class="ta">{{ opened[ev.seq] ? ev.text : toolSummary(ev.name, ev.text) }}</span>
+                  </div>
+
+                  <div v-else-if="ev.kind==='tool_result'" class="ev tres"
+                       :class="{err:ev.isError, open:opened[ev.seq]}" @click="opened[ev.seq] = !opened[ev.seq]">{{ ev.text || '(沒有輸出)' }}<span v-if="ev.truncated" class="more"> …還有 {{ ev.truncated }} 字元</span></div>
+
+                  <div v-else-if="ev.kind==='result'" class="ev res" :class="{bad:ev.isError}">
+                    <span>{{ ev.isError ? '✖ 結束（有錯誤）' : '✔ 完成' }}</span>
+                    <span v-if="ev.numTurns" class="m">{{ ev.numTurns }} 輪</span>
+                    <span v-if="ev.durationMs" class="m">{{ (ev.durationMs/1000).toFixed(1) }}s</span>
+                    <span v-if="ev.costUsd != null" class="m">${{ ev.costUsd.toFixed(4) }}</span>
+                  </div>
+
+                  <div v-else-if="ev.kind==='exit'" class="ev sys">
+                    <span>程序結束，回傳碼 {{ ev.code }}</span>
+                  </div>
+
+                  <div v-else class="ev raw" :class="ev.stream">{{ ev.text }}</div>
+                </template>
+
+                <div v-if="!(logs[currentTask.cardId]||[]).length" style="color:var(--text-3);font-size:var(--fs-sm)">
+                  等待工程師開始…
+                </div>
+                <div v-if="dropped[currentTask.cardId]" class="ev sys">
+                  <span>（較早的 {{ dropped[currentTask.cardId] }} 筆事件未載入，完整紀錄在 task/{{ currentTask.key }}/log.jsonl）</span>
+                </div>
+
+                <!-- 工程師提問（AskUserQuestion）：只出現在提問的那張任務對話裡，不打斷其他畫面 -->
+                <div v-for="item in questionsFor(currentTask.cardId)" :key="item.id" class="ev ask-card" role="group" aria-label="工程師提問">
+                  <div class="ask-head">❓ 工程師有問題要你選擇<span v-if="item.mock" class="ask-mock">模擬示範</span></div>
+                  <fieldset v-for="q in item.questions" :key="q.question" class="question">
+                    <legend><span v-if="q.header" class="q-chip">{{ q.header }}</span>{{ q.question }}<span v-if="q.multiSelect" class="q-multi">可複選</span></legend>
+                    <div class="opts" :role="q.multiSelect?'group':'radiogroup'" :aria-label="q.question">
+                      <button v-for="o in q.options" :key="o.label" type="button" class="opt" :role="q.multiSelect?'checkbox':'radio'"
+                              :class="{on:questionPicked(item,q,o.label)}" :aria-checked="questionPicked(item,q,o.label)" @click="toggleQuestionOption(item,q,o.label)">
+                        <div class="on1">{{ o.label }}</div>
+                        <div v-if="o.description" class="q-desc">{{ o.description }}</div>
+                      </button>
+                    </div>
+                    <input class="inp" v-model="questionDraft(item,q).other" :placeholder="q.multiSelect?'其他（選填，會一併送出）':'其他：自行輸入答案（填了會取代上面的選擇）'">
+                  </fieldset>
+                  <div class="ask-foot">
+                    <button class="btn ghost sm" :disabled="approvalSending" @click="skipQuestion(item)" title="不回答，讓工程師自行判斷或回報受阻">略過</button>
+                    <button class="btn sm" :disabled="approvalSending || !questionReady(item)" @click="answerQuestion(item)">送出回答</button>
+                  </div>
+                </div>
+              </div>
+
+              <button v-if="autoscroll[currentTask.cardId]===false" class="jump"
+                      @click="jumpBottom(currentTask.cardId)">↓ 跳到最新</button>
+            </div>
+
+            <div v-if="currentTask.automation?.enabled" class="workflow-summary">
+              <p v-if="currentTask.mock">模擬流程：未執行真實開發、驗證或推送。</p>
+              <p v-if="currentTask.blockedReason">{{currentTask.blockedReason}}</p>
+              <p v-if="currentTask.policyNotice">過程中有操作被權限模式擋下：{{currentTask.policyNotice}}（不影響完成判定；可至「AI 平台」調整權限模式）</p>
+              <p v-if="currentTask.resultSummary">工程師回報：{{currentTask.resultSummary}}</p>
+              <template v-if="['blocked','interrupted','failed'].includes(currentTask.status)">
+                <textarea class="inp" v-model="fbText[currentTask.key]" placeholder="補充需求或說明已排除的問題（選填）"></textarea>
+                <button class="btn sm" :disabled="fbSending" @click="resumeTask(currentTask.key)">恢復開發</button>
+              </template>
+            </div>
+            <div v-if="['done','failed'].includes(currentTask.status) || canReset(currentTask)" class="engineer-tools">
+              <template v-if="['done','failed'].includes(currentTask.status)">
+                <button class="btn sm" @click="openEngineerAction('overview')">檢查成果</button>
+                <span>{{currentTask.status==='failed'?'查看失敗原因並決定如何修改。':'查看成果、驗證與交付狀態，再決定是否驗收。'}}</span>
+              </template>
+              <span v-else>不滿意這次的結果？可清掉執行紀錄，回到待指派從頭再跑。</span>
+              <button v-if="canReset(currentTask)" class="btn ghost sm tools-end" title="清掉執行紀錄，回到待指派從頭再跑"
+                      @click="openReset(currentTask.key)">↺ 重置進度</button>
+            </div>
+            <div v-if="resetAsk === currentTask.key" class="confirm">
+              <span class="ctext">
+                重置 <b>{{ currentTask.key }}</b>？會清掉 AI 對話 session、成本與成果，退回待指派；
+                舊對話紀錄會封存在 task/{{ currentTask.key }}/，不會刪掉。
+              </span>
+              <label v-if="currentTask.branch && !currentTask.mock" class="ctext">
+                <input type="checkbox" v-model="resetDeleteBranch">
+                一併刪除本機任務分支 <b>{{ currentTask.branch }}</b>（含未合併的 commit，需再核准；遠端不受影響）
+              </label>
+              <span class="cbtns">
+                <button class="btn ghost sm" @click="resetAsk = null">取消</button>
+                <button class="btn danger sm" :disabled="resetting" @click="resetTask(currentTask.key)">{{ resetting ? '重置中…' : '確定重置' }}</button>
+              </span>
+            </div>
+          </template>
+        </div>
+      </section>
+
+      <!-- PM 日誌 -->
+      <section class="card log-card" v-show="mainView==='reports'" aria-label="回報">
+        <div class="card-head">
+          <span class="card-title">回報</span>
+          <span class="grow"></span>
+          <span class="count">{{ pmLogs.length }}</span>
+        </div>
+        <div class="card-body">
+          <div v-if="pmLogs.length===0" class="empty">
+            <div class="empty-terminal small" aria-hidden="true">···</div><div class="ed">{{pmName}} 的通知會顯示在這裡。</div>
+          </div>
+          <div v-else class="list scroll" ref="pmScroll" style="gap:0">
+            <div v-for="(m,i) in pmLogs" :key="i" class="logrow" :class="m.level">
+              <span class="ic">{{ logIcon(m.level) }}</span>
+              <span class="tm">{{ fmtTime(m.ts) }}</span>
+              <span class="msg">{{ m.message }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- ============ 設定 Modal ============ -->
+  <div v-if="showSettings" class="mask" @click.self="showSettings=false">
+    <div class="modal settings-modal" role="dialog" aria-modal="true" aria-label="設定">
+      <div class="modal-head">
+        <div>
+          <h2>⚙ 設定</h2>
+          <div class="sub">修改後按「儲存」套用，取消不會變更設定</div>
+        </div>
+        <button class="icon-btn" @click="showSettings=false" aria-label="關閉">✕</button>
+      </div>
+
+      <div class="stabs">
+        <button class="stab" :class="{on:setTab==='runtime'}" @click="setTab='runtime'">⚙️ 執行模式</button>
+        <button class="stab" :class="{on:setTab==='ai'}" @click="setTab='ai'">🤖 AI 平台</button>
+        <button class="stab" :class="{on:setTab==='jira'}" @click="setTab='jira'">🔗 Jira</button>
+        <button class="stab" :class="{on:setTab==='projects'}" @click="setTab='projects'">📁 專案</button>
+        <button class="stab" :class="{on:setTab==='engineers'}" @click="setTab='engineers'">🧑‍💻 工程師</button>
+        <button class="stab" :class="{on:setTab==='modules'}" @click="setTab='modules'">🧩 功能模組</button>
+      </div>
+
+      <div class="modal-body">
+        <template v-if="setTab==='runtime'">
+          <label for="runtime-mode">全域執行模式</label>
+          <select id="runtime-mode" class="inp" v-model="draftModes.mode" :disabled="aiLoading || setSaving">
+            <option value="mock">Mock — AI 與 Jira 全部使用模擬資料</option>
+            <option value="real">Real — AI 執行真實 CLI，Jira 使用 Atlassian MCP</option>
+          </select>
+          <p class="lockhint">目前實際為 <b>{{ modesInfo.effective.mode || '—' }}</b>。切換後會同時套用到 Claude Code、Codex 與 Jira。</p>
+          <p class="lockhint">⚠ Real 模式會讓 AI 真的修改專案檔案，並連線真實 Jira。有任務正在執行時無法切換。</p>
+          <p class="lockhint">Real 模式前請先確認所選 AI CLI 已登入、Jira MCP 已授權，並在 Jira 分頁填好看板 ID。</p>
+        </template>
+        <template v-if="setTab==='ai'">
+          <label for="ai-provider">使用的 AI 平台</label>
+          <select id="ai-provider" class="inp" v-model="draftAi.provider" @change="loadModels" :disabled="aiLoading || setSaving">
+            <option value="claude">Claude Code</option><option value="codex">OpenAI Codex</option>
+          </select>
+          <p class="lockhint">套用至新指派的任務與連線測試。執行中與待驗收的任務仍使用原平台，回饋會接續原本對話。</p>
+          <p class="lockhint" v-if="draftAi.provider==='codex'">請先在本機安裝 Codex CLI 並執行 <code>codex login</code> 登入。可在「工程師」分頁設定 Codex 模型；留空使用 CLI 預設模型。</p>
+          <p class="lockhint" v-else>請先在本機安裝並登入 Claude Code CLI。既有 Claude 模型設定會保留。</p>
+          <p class="lockhint">儲存後可透過頂列「連線測試」確認 CLI 與登入狀態。兩個平台的模型設定分別保存。</p>
+          <label for="access-mode" style="margin-top:14px">AI 權限模式</label>
+          <select id="access-mode" class="inp" v-model="draftModes.accessMode" :disabled="aiLoading || setSaving">
+            <option value="ask">要求核准 — 敏感操作送回 PixelOffice 逐次確認</option>
+            <option value="auto">代我核准 — 由 AI 原生安全審核，保留工作區 sandbox</option>
+            <option value="full">完整存取 — 不詢問且不使用 sandbox</option>
+          </select>
+          <p class="lockhint" v-if="draftModes.accessMode==='full'">⚠ 完整存取可讀寫工作區外檔案並使用網路，只應用於信任的專案與隔離環境。</p>
+        </template>
+        <!-- Jira -->
+        <template v-if="setTab==='jira'">
+          <label for="jira-board" style="margin-top:14px">看板 ID（JIRA_BOARD_ID）</label>
+          <input id="jira-board" class="inp" v-model.trim="draftModes.jiraBoardId" inputmode="numeric" placeholder="例如 123" :disabled="aiLoading || setSaving" />
+          <p class="lockhint">Real 模式的 Jira MCP 靠它選出該看板最新的進行中 Sprint。只能填數字；留空等同未設定。</p>
+          <p class="lockhint">env 預設值為 <b>{{ modesInfo.defaults.jiraBoardId || '（未設定）' }}</b><span v-if="modesInfo.overridden.jiraBoardId">，目前被此處的設定覆寫</span>。</p>
+          <p class="lockhint">切換後立即生效，不需重啟；但有任務正在執行時會被擋下。</p>
+        </template>
+        <!-- 功能模組 -->
+        <template v-if="setTab==='modules'">
+          <p class="lockhint" style="margin-top:0">選配功能預設關閉，啟用後才會出現在畫面上。儲存後立即生效，任務執行中也可以切換。</p>
+          <label style="margin-top:14px"><input type="checkbox" :checked="draftModes.jev==='on'" @change="draftModes.jev=$event.target.checked?'on':'off'" :disabled="aiLoading || setSaving" /> <b>Jev 小助手</b>（實驗性）</label>
+          <p class="lockhint">在「檢查成果」多一個 Jev 小助手分頁，連線測試頁也會顯示 Jev 連線測試。評分會把本地任務單與 Git 改動送到 TypeSafe Jev API，需要先在 <code>.env</code> 設定 <code>TYPESAFE_API_KEY</code>。</p>
+          <p class="lockhint">env 預設值為 <b>{{ modesInfo.defaults.jev==='on' ? '啟用' : '關閉' }}</b>（<code>JEV_ENABLED</code>）<span v-if="modesInfo.overridden.jev">，目前被此處的設定覆寫</span>。</p>
+        </template>
+        <!-- 專案 -->
+        <template v-if="setTab==='projects'">
+          <div class="grid-head grid-p">
+            <span>類型</span><span>專案名稱</span><span>專案路徑</span><span></span>
+          </div>
+          <div v-for="(p,i) in draftProjects" :key="p._k" class="grid-row grid-p">
+            <select v-model="p.type" class="inp">
+              <option value="前端">前端</option>
+              <option value="後端">後端</option>
+              <option value="全端">全端</option>
+              <option value="其他">其他</option>
+            </select>
+            <input v-model="p.name" class="inp" placeholder="前端專案" />
+            <input v-model="p.path" class="inp mono" spellcheck="false" placeholder="C:/Users/you/projects/frontend" />
+            <button class="rowdel" @click="draftProjects.splice(i,1)" :aria-label="'刪除 '+p.name">✕</button>
+          </div>
+          <details v-for="p in draftProjects" :key="p._k+'-automation'" class="workflow-settings">
+            <summary>{{p.name || '新專案'}} · 自動開發設定</summary>
+            <label><input type="checkbox" v-model="p.automation.enabled" /> 分配後自動開發（是否提交與推送仍由人工決定）</label>
+            <label>每階段逾時（分鐘）<input class="inp" type="number" min="1" max="120" v-model.number="p.automation.timeoutMinutes" /></label>
+            <label>自動分支起點／MR 目標分支 <input class="inp" v-model="p.automation.baseBranch" placeholder="develop" /></label>
+            <p>自動模式會先切到此分支，從 origin 以 fast-forward only 拉取最新內容，再建立任務分支；未設定時使用 develop。AI 工具權限由「AI 平台」的權限模式統一控制；提交與推送仍由使用者處理。</p>
+          </details>
+          <div v-if="!draftProjects.length" class="ed" style="padding:16px 0">尚未設定任何專案</div>
+          <p v-if="draftModes.mode==='mock'" class="lockhint">Mock 模式不會讀寫專案路徑，新增專案時會自動填入示範路徑（mock/project-1…）；切到 Real 前要改成實際的 Git 專案路徑。</p>
+          <button class="btn ghost sm" style="margin-top:10px" @click="addProject">＋ 新增專案</button>
+        </template>
+
+        <!-- 工程師 -->
+        <template v-else-if="setTab==='engineers'">
+          <div class="grid-head grid-e">
+            <span></span><span>工程師名稱</span><span>{{ draftAi.provider==='codex' ? 'Codex' : 'Claude Code' }} 模型</span><span class="estat">狀態</span><span></span>
+          </div>
+          <div v-for="(e,i) in draftEngineers" :key="e._k" class="grid-row grid-e">
+            <span class="swatch" :style="{background:PALETTE[i % PALETTE.length]}"></span>
+            <input v-model="e.name" class="inp" placeholder="工程師名稱" />
+            <input v-model="e[draftAi.provider==='codex' ? 'codexModel' : 'model']" class="inp mono" list="modelopts" spellcheck="false"
+                   placeholder="預設" :title="'留空 = 跟著所選 AI 平台 CLI 的預設'" />
+            <span class="estat" style="font-size:var(--fs-xs);color:var(--text-3)">
+              {{ engineers[e.id] && engineers[e.id].status==='working' ? '執行中' : '待命中' }}
+            </span>
+            <button class="rowdel" :disabled="engineers[e.id] && engineers[e.id].status==='working'"
+                    @click="draftEngineers.splice(i,1)" :aria-label="'刪除 '+e.name">✕</button>
+          </div>
+
+          <datalist id="modelopts">
+            <option v-for="o in modelOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+          </datalist>
+
+          <button class="btn ghost sm" style="margin-top:10px" :disabled="draftEngineers.length>=6" @click="addEngineer">＋ 新增工程師（{{draftEngineers.length}} / 6）</button>
+          <p class="lockhint">
+            工程師不分類型 —— AI 依工單內容做事，類型標籤放在專案上即可。執行中的工程師無法刪除。
+          </p>
+          <p class="lockhint">
+            <b>模型</b>：留空使用所選平台的預設模型，也可輸入帳號可用的模型 ID。
+            <span v-if="draftAi.provider==='claude'">Claude 可使用 opus、sonnet、haiku 等別名。</span>
+            <span v-if="modelInfo.error">（模型清單無法讀取：{{ modelInfo.error }}；仍可手動填寫）</span>
+          </p>
+        </template>
+
+        <p v-if="setErr" class="kerr">⚠️ {{ setErr }}</p>
+      </div>
+
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn ghost sm" @click="showSettings=false">取消</button>
+        <button class="btn sm" :disabled="setSaving || aiLoading || !aiReady" @click="saveSettings">
+          {{ setSaving ? '儲存中…' : '儲存' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 檢查成果 Modal ============ -->
+  <div v-if="engineerAction" class="mask">
+    <div class="modal results-modal" role="dialog" aria-modal="true" aria-label="檢查成果">
+      <div class="modal-head"><div><h2>檢查成果 · {{engineerAction.name}}</h2><p>{{engineerAction.key}} · {{engineerAction.summary}}</p></div><button class="icon-btn" :disabled="actionBusy || accepting || fbSending" @click="engineerAction=null" aria-label="關閉">✕</button></div>
+      <div class="stabs" role="tablist" aria-label="檢查成果分類"><button v-for="item in resultTabs" :key="item.id" :class="['stab',{on:resultTab===item.id}]" role="tab" :aria-selected="resultTab===item.id" :disabled="actionBusy" @click="selectResultTab(item.id)">{{item.label}}</button></div>
+      <div class="modal-body action-fields">
+        <section v-if="resultTab==='report'">
+          <h3>成果報告</h3>
+          <p v-if="resultTask?.blockedReason" class="dirty-warn">{{resultTask.blockedReason}}</p>
+          <p v-if="resultTask?.status==='failed'" class="dirty-warn">任務執行失敗，請先查看原因並要求修改或返回任務處理。</p>
+          <p>以下報告依工作區實際差異整理；它協助你快速了解改動，不代表系統已驗證功能。</p>
+          <pre class="result-report">{{resultReport}}</pre>
+          <p v-if="reportMock" class="dirty-warn">目前是 Mock 示範報告。</p>
+        </section>
+        <section v-if="resultTab==='changes'">
+          <p>以下只列出目前工作區的 Git 變更檔案，狀態格式與 <code>git status --short</code> 相同。</p>
+          <button class="btn ghost sm" :disabled="actionBusy" @click="runEngineerAction('overview')">{{actionOverview?'重新整理':'讀取變更檔案'}}</button>
+          <template v-if="actionOverview"><p v-if="actionOverview.mock" class="dirty-warn">Mock 示範清單，不是真實的 Git 變更。</p><p>目前分支：<b>{{actionOverview.branch}}</b> · {{actionOverview.files.length}} 個變更檔案</p>
+            <div class="chg-row" v-for="f in actionOverview.files"><code>{{f.code}}</code><span>{{f.file}}<small v-if="f.original"> ← {{f.original}}</small></span></div>
+            <p v-if="!actionOverview.files.length">工作區乾淨，沒有未提交的修改。</p>
+            <p>?? 代表未追蹤檔案；commit 草稿與提交動作會一併納入。</p>
+          </template>
+        </section>
+        <section v-if="resultTab==='jev' && sys.modules.jev">
+          <div class="jev-intro">
+            <div><span class="jev-eyebrow">實驗性功能 · 人工驗收參考</span><h3>Jev 小助手</h3><p>對照本地 Jira 任務單與程式改動，檢查五個面向。每項通過得 20 分，未通過得 0 分；80 分達參考門檻。</p></div>
+            <button class="btn sm" :disabled="jevLoading || actionBusy" @click="runJevReview">{{jevLoading?'檢查中…':jevReview?'重新檢查':'開始檢查'}}</button>
+          </div>
+          <p v-if="resultTask?.mock" class="jev-callout">Mock 示範：不讀取程式差異，也不呼叫 Jev API。</p>
+          <p v-else class="jev-callout">按下檢查會將本地 Jira 任務單與目前的 Git 改動送至 TypeSafe Jev API。</p>
+          <p v-if="jevError" role="alert" class="dirty-warn">{{jevError}}</p>
+          <div v-if="jevReview" class="jev-score" role="status">
+            <div class="jev-score-hero" :class="jevReview.qualified?'qualified':'needs-review'">
+              <div><span class="jev-eyebrow">{{jevReview.mock?'MOCK 示範結果':'JEV 檢查結果'}}</span><div class="jev-total">{{jevReview.total}}<span>/100</span></div><span class="jev-threshold">參考門檻 80 分</span></div>
+              <span class="jev-overall-badge">{{jevReview.qualified?'達參考門檻':'未達參考門檻'}}</span>
+            </div>
+            <div class="jev-score-grid"><div class="jev-score-card" :class="item.passed?'passed':'not-passed'" v-for="(item,index) in jevReview.items" :key="item.key" :title="item.hint"><span class="jev-card-index">{{String(index+1).padStart(2,'0')}}</span><h4>{{item.label}}</h4><span class="jev-item-badge">{{item.verdict}}</span><div class="jev-card-points">{{item.score}}<span>/20</span></div></div></div>
+            <p class="jev-footnote">{{jevReview.note}}</p>
+          </div>
+        </section>
+        <section v-if="resultTab==='delivery'">
+          <h3>交付草稿</h3>
+          <p>草稿規則使用專案預設；工程師設定的非空欄位會覆寫專案規則。</p>
+          <label>草稿類型<select v-model="draftKind" :disabled="actionBusy"><option value="commit">Commit 訊息</option><option value="mr">MR 標題與內容</option></select></label>
+          <label v-if="draftKind==='mr'">MR 目標分支<input v-model="actionBase" placeholder="例如 origin/main" /></label>
+          <p>{{draftKind==='commit'?'先讀取變更檔案；工作區有變更時才能生成，含新增的未追蹤檔案。可編輯後按「提交變更」，也可複製到自己的 Git 工具。':'依目標分支與 HEAD 的已提交差異生成，不會建立遠端 MR。'}}</p>
+          <button class="btn sm" :disabled="actionBusy || (draftKind==='commit'?!actionOverview?.hasChanges:!actionBase.trim())" @click="runEngineerAction(draftKind)">生成草稿</button>
+          <label v-if="drafts[draftKind]">{{draftMocks[draftKind]?'Mock 示範（非 AI 生成）':'草稿，可編輯'}}<textarea v-model="drafts[draftKind]" rows="12"></textarea></label>
+          <button v-if="drafts[draftKind]" class="btn ghost sm" @click="copyActionResult">複製草稿</button>
+          <button v-if="draftKind==='commit' && drafts.commit" class="btn sm" :disabled="actionBusy || !actionOverview?.hasChanges" @click="runEngineerAction('commit-now')">提交變更</button>
+          <h3>推送已提交內容</h3>
+          <p>完成 commit 後可檢查並推送目前分支至 <code>origin</code> 的同名分支；推送不會自動發生，也不會強制覆寫。</p>
+          <button class="btn ghost sm" :disabled="actionBusy" @click="runEngineerAction('delivery')">檢查推送資訊</button>
+          <template v-if="deliveryInfo"><p v-if="deliveryInfo.mock" class="dirty-warn">Mock 示範資料，沒有對應的真實遠端或提交。</p><p>遠端：{{deliveryInfo.url}}<br />目標分支：{{deliveryInfo.branch}}</p><p v-if="deliveryInfo.unknown">本機沒有對應的遠端追蹤分支，無法確定待推送提交；推送可能建立新分支。</p><template v-else><p>待推送提交（依本機遠端追蹤資料，未 fetch）：</p><pre class="result-code">{{deliveryInfo.commits || '沒有待推送提交。'}}</pre></template><button class="btn sm" :disabled="actionBusy || (!deliveryInfo.unknown && !deliveryInfo.commits)" @click="runEngineerAction('push')">推送已提交內容</button></template>
+          <details class="result-more"><summary>進階 Git 操作</summary><p>捨棄已追蹤檔案與暫存區的未提交修改，還原至 HEAD；未追蹤檔案保留。這會影響整個工作區，系統會另行列出指令請你確認。</p><button class="btn ghost sm" :disabled="actionBusy || !actionOverview?.hasTrackedChanges" @click="runEngineerAction('discard')">捨棄未提交變更</button></details>
+        </section>
+        <p v-if="actionResult" role="status">{{actionResult}}</p><p v-if="actionError" role="alert" class="dirty-warn">{{actionError}}</p><p v-if="actionBusy" role="status">處理中；若操作會改變 Git，系統將另開確認視窗…</p>
+      </div><div class="modal-foot result-decision">
+        <div v-if="showResultFeedback" class="result-feedback"><label for="result-feedback-text">修改意見</label><textarea id="result-feedback-text" v-model="fbText[engineerAction.key]" placeholder="具體描述需要修改的地方"></textarea></div>
+        <p v-if="acceptConfirm" class="result-confirm">確認驗收 {{engineerAction.key}}？系統沒有代為驗證，請確認你已看過變更並完成需要的提交。確認後任務會結案。</p>
+        <div class="result-decision-actions"><button class="btn ghost sm" :disabled="actionBusy || accepting || fbSending" @click="engineerAction=null">返回任務</button><span class="grow"></span><button v-if="!showResultFeedback" class="btn ghost sm" :disabled="actionBusy || accepting || fbSending" @click="showResultFeedback=true; acceptConfirm=false">要求修改</button><template v-else><button class="btn ghost sm" :disabled="fbSending" @click="showResultFeedback=false">取消</button><button class="btn sm" :disabled="actionBusy || fbSending || !(fbText[engineerAction.key]||'').trim()" @click="submitResultFeedback">{{fbSending?'送出中…':'送出修改意見'}}</button></template><template v-if="resultTask?.status==='done' && !showResultFeedback"><button v-if="!acceptConfirm" class="btn sm" :disabled="actionBusy || accepting" @click="acceptConfirm=true">驗收完成</button><button v-else class="btn sm" :disabled="actionBusy || accepting" @click="confirmResultAcceptance">{{accepting?'驗收中…':'確認驗收'}}</button></template></div>
+      </div>
+    </div>
+  </div>
+  <div v-if="toolApprovals.length" class="mask" style="z-index:10000">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="操作確認">
+      <div class="modal-head"><h2>等待你的操作確認（{{toolApprovals.length}}）</h2></div>
+      <div class="modal-body"><p>只核准這一次操作。拒絕或逾時不會執行。</p><p>任務：{{toolApprovals[0].cardId || '派工／驗收檢查'}}</p><p style="overflow-wrap:anywhere">目錄：{{toolApprovals[0].cwd}}</p><p v-if="toolApprovals[0].details">{{toolApprovals[0].details}}</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{toolApprovals[0].command}}<br>{{toolApprovals[0].input ? JSON.stringify(toolApprovals[0].input,null,2) : ''}}</pre></div>
+      <div class="modal-foot"><button class="btn ghost" :disabled="approvalSending" @click="decideApproval(false)">拒絕</button><button class="btn" :disabled="approvalSending" @click="decideApproval(true)">允許這一次</button></div>
+    </div>
+  </div>
+  <div v-if="overviewFilter" class="mask" @click.self="overviewFilter=null">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="工作總覽任務">
+      <div class="modal-head"><h2>{{overviewFilter==='done' ? '待驗收' : overviewFilter==='failed' ? '失敗／中止' : '執行中'}}</h2><button class="icon-btn" @click="overviewFilter=null" aria-label="關閉">✕</button></div>
+      <div class="modal-body"><p v-if="!overviewTasks.length">目前沒有這類任務。</p><button v-for="t in overviewTasks" :key="t.key" class="pickrow" @click="openOverviewTask(t)"><span>{{t.key}} · {{t.summary}}<small style="display:block">{{engineers[t.engineerId]?.name || t.engineerId}} · {{taskStatusLabel(t.status, t.archived)}}</small></span><span>查看 →</span></button></div>
+    </div>
+  </div>
+  <!-- ============ BOSS 工作日誌 Modal ============ -->
+  <div v-if="showWorkLog" class="mask" @click.self="showWorkLog=false">
+    <div class="modal worklog-modal" role="dialog" aria-modal="true" aria-labelledby="worklog-title">
+      <div class="modal-head">
+        <div><h2 id="worklog-title">工作日誌</h2><div class="sub">每次驗收完成會自動寫入 note/年/月日.md</div></div>
+        <button class="icon-btn" @click="showWorkLog=false" aria-label="關閉">✕</button>
+      </div>
+      <div class="worklog-bar">
+        <button class="btn ghost sm" :disabled="!olderWorkLog || workLogLoading" @click="pickWorkLogDate(olderWorkLog)" title="上一篇有日誌的日期">‹ 上一篇</button>
+        <label class="worklog-date">日期 <input type="date" :value="workLogDate" :max="workLogToday" @change="pickWorkLogDate($event.target.value)" /></label>
+        <button class="btn ghost sm" :disabled="!newerWorkLog || workLogLoading" @click="pickWorkLogDate(newerWorkLog)" title="下一篇有日誌的日期">下一篇 ›</button>
+        <button class="btn ghost sm" :disabled="workLogDate===workLogToday || workLogLoading" @click="pickWorkLogDate(workLogToday)">今天</button>
+      </div>
+      <div v-if="workLogDates.length" class="worklog-recent" role="group" aria-label="最近的日誌">
+        <button v-for="d in workLogDates.slice(0,10)" :key="d.date" class="worklog-chip" :aria-pressed="d.date===workLogDate" @click="pickWorkLogDate(d.date)">{{d.date.slice(5).replace('-','/')}}<span>{{d.count}} 項</span></button>
+      </div>
+      <div class="modal-body worklog-body" aria-live="polite">
+        <p v-if="workLogError" class="kerr">⚠️ {{workLogError}}</p>
+        <div v-else-if="workLogLoading" class="skel" style="height:160px"></div>
+        <div v-else-if="!workLogMarkdown" class="worklog-empty"><b>{{workLogDate}} 沒有工作日誌</b><p>這天沒有驗收完成的任務。任務在「檢查成果 → 驗收完成」後才會寫入日誌。</p></div>
+        <article v-else class="worklog-doc" v-html="workLogHtml"></article>
+      </div>
+      <div class="modal-foot">
+        <span class="worklog-hint">複製成果為純文字。</span>
+        <span class="grow"></span>
+        <button class="btn ghost sm" :disabled="!workLogMarkdown" @click="copyWorkLog('plain')" title="純文字：每張單的單號、標題與交付成果">複製成果</button>
+        <button class="btn ghost sm" :disabled="!workLogMarkdown" @click="copyWorkLog('summary')">複製摘要</button>
+        <button class="btn sm" :disabled="!workLogMarkdown" @click="copyWorkLog('full')">複製全文</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 指定單號 Modal ============ -->
+  <div v-if="showByKey" class="mask" @click.self="showByKey=false">
+    <div class="modal claim-modal" role="dialog" aria-modal="true" aria-label="指定任務單號">
+      <div class="modal-head">
+        <div class="claim-heading"><h2>接取 Jira 任務</h2><div class="sub">選擇任務來源，加入待指派看板</div></div>
+        <button class="icon-btn"  @click="showByKey=false" aria-label="關閉">✕</button>
+      </div>
+      <div class="claim-tabs" role="group" aria-label="任務來源"><button class="scene-btn" :disabled="byKeyLoading" @click="openClaim">待辦清單</button><button class="scene-btn" aria-pressed="true">輸入單號</button><button class="scene-btn" :disabled="byKeyLoading" @click="openCreate">開新單</button></div>
+      <div class="claim-context"><p>輸入 Jira 單號，可用逗號或空白分隔多筆</p></div>
+      <div class="modal-body">
+        <input ref="keyInput" v-model="keyText" class="keyin" spellcheck="false"
+               placeholder="DEMO-123, DEMO-456"
+               @keydown.enter.prevent="claimByKey" :disabled="byKeyLoading" />
+
+        <p v-if="byKeyErr" class="kerr">⚠️ {{ byKeyErr }}</p>
+        <p v-if="byKeyMissing.length" class="kerr">🔍 查無這些單號：{{ byKeyMissing.join('、') }}</p>
+
+        <details v-if="(byKeyErr || byKeyMissing.length) && mcpLog.length" class="mcp-details" open>
+          <summary>連線訊息</summary>
+          <div class="mcpbox" ref="mcpBox">{{ mcpLog.join('') }}</div>
+        </details>
+
+        <div v-if="byKeyLoading" style="margin-top:12px">
+          <div class="skel" style="height:40px"></div>
+        </div>
+        <p v-else class="lockhint">會先向 Jira 查詢該單號取回真實標題，確認存在後才放進刊版。</p>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn ghost sm" @click="showByKey=false">取消</button>
+        <button class="btn sm" :disabled="!keyText.trim() || byKeyLoading" @click="claimByKey">
+          {{ byKeyLoading ? '查詢中…' : '加入刊版' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 接取 Modal ============ -->
+  <div v-if="showClaim" class="mask" @click.self="showClaim=false">
+    <div class="modal claim-modal" role="dialog" aria-modal="true" aria-label="接取待辦未指派任務">
+      <div class="modal-head">
+        <div class="claim-heading"><h2>接取 Jira 任務</h2><div class="sub">選擇任務來源，加入待指派看板</div></div>
+        <button class="icon-btn"  @click="showClaim=false" aria-label="關閉">✕</button>
+      </div>
+      <div class="claim-tabs" role="group" aria-label="任務來源"><button class="scene-btn" aria-pressed="true">待辦清單</button><button class="scene-btn" :disabled="loadingJira || claiming" @click="openByKey">輸入單號</button><button class="scene-btn" :disabled="loadingJira || claiming" @click="openCreate">開新單</button></div>
+
+      <div class="claim-context"><div class="claim-context-copy"><p v-if="jiraSprint" class="claim-sprint" :title="jiraSprint.name">{{ jiraSprint.name }}</p><p v-else>{{ loadingJira ? '正在取得待辦清單…' : (jiraError ? '待辦清單暫時無法取得' : '目前沒有進行中的 Sprint') }}</p><span class="claim-context-hint">待辦未指派 · 可多選</span></div><button class="btn sm ghost" :disabled="loadingJira || claiming" :title="jiraFetchedAt ? '資料更新於 ' + fetchedAtLabel(jiraFetchedAt) : '重新取得 Jira 任務'" @click="refreshJira">{{ loadingJira ? '更新中…' : '↻ 重新整理' }}</button></div>
+      <div class="modal-body">
+        <template v-if="loadingJira">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+          </div>
+          <div style="margin-top:12px;font-size:var(--fs-sm);color:var(--text-3)">正在連線 Jira…（首次啟動或按下重新整理時需要數十秒）</div>
+        </template>
+
+        <template v-else>
+          <div v-if="jiraError" class="empty">
+            <div class="ei">⚠️</div><div class="eh">取得任務失敗</div>
+            <div class="ed">{{ jiraError }}</div>
+            <button class="btn sm ghost" @click="openClaim">重試</button>
+            <details v-if="mcpLog.length" class="mcp-details" open>
+              <summary>連線訊息</summary>
+              <div class="mcpbox" ref="mcpBox">{{ mcpLog.join('') }}</div>
+            </details>
+          </div>
+          <div v-else-if="jiraTasks.length===0" class="empty">
+            <div class="ei">🎉</div><div class="eh">目前沒有可接取任務</div>
+            <div class="ed">目前查詢結果沒有可新增的任務。已接取、執行中、待驗收、已驗收與已封存的任務不會重複列出。</div>
+          </div>
+          <template v-else>
+            <button v-for="jt in jiraTasks" :key="jt.key" class="pickrow"
+                    :disabled="jt.unavailable || claiming" :class="{on:selected.has(jt.key)}" @click="toggleSelect(jt.key)"
+                    :aria-pressed="selected.has(jt.key)">
+              <span class="chk">✔</span>
+              <span style="flex:1">
+                <span class="key">{{ jt.key }}</span><span v-if="jt.localStatusLabel" style="margin-left:12px">{{jt.localStatusLabel}}{{jt.unavailable?' · 無需重複接取':' · 可重新接取'}}</span>
+                <span style="display:block;margin-top:7px;font-size:var(--fs-body)">{{ jt.summary }}</span>
+              </span>
+            </button>
+          </template>
+        </template>
+      </div>
+
+      <div class="modal-foot" style="align-items:flex-start">
+        <span style="min-width:0;flex:1">
+          <span style="font-size:var(--fs-sm);color:var(--text-3)">已選 {{ selected.size }} 張</span>
+          <span v-if="jql" class="jql" :title="jql">JQL: {{ jql }}</span>
+        </span>
+        <button class="btn ghost sm" @click="showClaim=false">取消</button>
+        <button class="btn sm" :disabled="selected.size===0 || claiming" @click="claim">
+          {{ claiming ? '接取中…' : '接取選取' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 開新單 Modal ============ -->
+  <div v-if="showCreate" class="mask" @click.self="showCreate=false">
+    <div class="modal claim-modal" role="dialog" aria-modal="true" aria-label="建立 Jira 工單">
+      <div class="modal-head">
+        <div class="claim-heading"><h2>接取 Jira 任務</h2><div class="sub">選擇任務來源，加入待指派看板</div></div>
+        <button class="icon-btn" :disabled="cardDrafting || cardCreating" @click="showCreate=false" aria-label="關閉">✕</button>
+      </div>
+      <div class="claim-tabs" role="group" aria-label="任務來源">
+        <button class="scene-btn" :disabled="cardDrafting || cardCreating" @click="openClaim">待辦清單</button>
+        <button class="scene-btn" :disabled="cardDrafting || cardCreating" @click="openByKey">輸入單號</button>
+        <button class="scene-btn" aria-pressed="true">開新單</button>
+      </div>
+
+      <div class="modal-body action-fields">
+        <p v-if="cardOptions.supported===false" class="kerr">⚠️ {{ cardOptions.reason }}</p>
+
+        <template v-else>
+          <div class="step"><span class="n">1</span><span class="t">議題類型與需求內容</span></div>
+          <div class="opts type-opts" role="radiogroup" aria-label="議題類型"
+               :style="{ gridTemplateColumns: 'repeat(' + Math.max(cardOptions.issueTypes.length, 1) + ', minmax(0,1fr))' }">
+            <button v-for="t in cardOptions.issueTypes" :key="t.name" type="button" class="opt" role="radio"
+                    :class="{ on: cardType===t.name }" :aria-checked="cardType===t.name"
+                    :disabled="cardDrafting || cardCreating" @click="cardType=t.name">
+              <span class="on1">{{ t.label || t.name }}<span v-if="t.label && t.label !== t.name" class="type-jira">Jira：{{ t.name }}</span></span>
+              <span v-if="t.purpose" class="type-purpose">{{ t.purpose }}</span>
+            </button>
+          </div>
+          <div v-if="cardTypeInfo() && cardTypeInfo().sections && cardTypeInfo().sections.length" class="type-sections">
+            <span class="type-sections-label">「{{ cardTypeInfo().label || cardType }}」會產生這些章節：</span>
+            <span v-for="s in cardTypeInfo().sections" :key="s" class="type-chip">{{ s }}</span>
+          </div>
+
+          <textarea v-model="cardText" rows="6" :disabled="cardDrafting || cardCreating"
+                    :placeholder="(cardTypeInfo() && cardTypeInfo().example) || '用口語描述需求、問題或想做的事，AI 會整理成工單格式'"></textarea>
+          <p class="lockhint">用口語描述即可，AI 會依上面的章節整理；沒提到的章節會標「（待補）」，不會自己編。</p>
+
+          <p v-if="cardOptions.contextError" class="kerr">⚠️ 取不到專案與父系候選：{{ cardOptions.contextError }}（仍可手動輸入父系單號）</p>
+
+          <!-- 重新整理鈕不能放進 <label>：點標籤文字會觸發 label 內第一個可操作元素，變成誤按 -->
+          <div class="field-head">
+            <label for="card-parent">父系（必填）</label>
+            <button type="button" class="mini-refresh" :class="{ spinning: cardOptionsLoading }"
+                    :disabled="cardOptionsLoading || cardDrafting || cardCreating"
+                    :title="'重新向 Jira 取得父系與衝刺清單' + (cardOptionsFetchedAt ? '（上次更新 ' + fetchedAtLabel(cardOptionsFetchedAt) + '）' : '')"
+                    :aria-label="cardOptionsLoading ? '更新中' : '重新整理父系與衝刺清單'" @click="refreshCardOptions">↻</button>
+          </div>
+          <select id="card-parent" class="field-select" v-model="cardParent" :disabled="cardCreating">
+              <option value="">請選擇父系單</option>
+              <optgroup v-for="g in parentGroups()" :key="g.type" :label="g.type">
+                <option v-for="p in g.issues" :key="p.key" :value="p.key">{{ p.key }} · {{ p.summary }}</option>
+              </optgroup>
+              <option :value="MANUAL_PARENT">✎ 不在清單裡，手動輸入單號</option>
+          </select>
+          <template v-if="isManualParent()">
+            <label>父系單號
+              <input v-model="cardParentManual" spellcheck="false" placeholder="DEMO-123"
+                     :disabled="cardParentLoading || cardCreating" @blur="lookupParent" @keydown.enter.prevent="lookupParent" />
+            </label>
+            <p v-if="cardParentLoading">查詢父系單中…</p>
+            <p v-else-if="cardParentErr" class="kerr">⚠️ {{ cardParentErr }}</p>
+            <p v-else-if="cardParentInfo">✔ {{ cardParentInfo.key }} · {{ cardParentInfo.summary }}（專案 {{ cardParentInfo.projectKey }}）</p>
+            <p v-else class="lockhint">輸入後按 Enter 或點其他地方，會先跟 Jira 確認這張單存在。</p>
+          </template>
+          <p v-else-if="!parentCount()" class="lockhint">清單目前沒有可選的父系，請選最後一項手動輸入單號。</p>
+          <p v-else class="lockhint">清單列出專案 <b>{{ cardOptions.projectKey }}</b> 未完成的大型工作（最近 50 張）；
+            要掛在其他單底下就選最後一項手動輸入。</p>
+
+          <label>負責端（選填）
+            <select v-model="cardScope" :disabled="cardCreating">
+              <option value="">未指定（標題不加前綴）</option>
+              <option v-for="s in CARD_SCOPES" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </label>
+          <p v-if="cardScope" class="lockhint">建立時標題會變成「[{{ cardScope }}] 原本的標題」。</p>
+
+          <label>衝刺（選填）
+            <select v-model="cardSprintId" :disabled="cardCreating">
+              <option value="">不指定（建立後在 Jira 手動排入）</option>
+              <option v-for="sp in cardOptions.sprints" :key="sp.id" :value="sp.id">{{ sp.name }} · #{{ sp.id }}</option>
+            </select>
+          </label>
+          <p v-if="cardOptions.sprintError" class="lockhint">取不到衝刺清單：{{ cardOptions.sprintError }}（仍可留空建立）</p>
+
+          <div class="step"><span class="n">2</span><span class="t">生成工單內容</span></div>
+          <p v-if="cardOptions.aiMock" class="lockhint">AI 目前是 mock 模式，只會產生示範草稿，不是真的生成結果。</p>
+          <button class="btn sm" :disabled="!cardText.trim() || cardDrafting || cardCreating" @click="generateCard">
+            {{ cardDrafting ? '生成中…' : (cardDraft ? '重新生成' : '生成工單內容') }}
+          </button>
+          <p class="lockhint">依開卡 SKILL 的描述範本生成。範本檔位置（可直接修改，不必改程式）：<br />
+            <code style="overflow-wrap:anywhere">{{ cardOptions.promptFile || 'config/jira-card-prompt.md' }}</code></p>
+
+          <template v-if="cardDraft">
+            <div class="step"><span class="n">3</span><span class="t">預覽與確認</span></div>
+            <p v-if="cardDraftMock" class="dirty-warn">這是 Mock 示範內容，不是 AI 生成。</p>
+            <p class="lockhint">送出的是下面的內容，可以直接修改。建立後的工單對所有人可見，且無法在這裡撤銷。</p>
+            <label>摘要
+              <span class="summary-field">
+                <span v-if="scopePrefix()" class="summary-prefix" title="由「負責端」決定，要改請換上面的選項">{{ scopePrefix().trim() }}</span>
+                <input v-model="cardDraft.summary" :disabled="cardCreating" :maxlength="SUMMARY_MAX - scopePrefix().length" />
+              </span>
+            </label>
+            <label>描述（Markdown）<textarea v-model="cardDraft.description" rows="16" :disabled="cardCreating"></textarea></label>
+          </template>
+
+          <template v-if="cardCreated">
+            <p role="status">✅ 已建立 <b>{{ cardCreated.key }}</b><span v-if="cardCreated.mock">（Mock，未寫入 Jira）</span></p>
+            <p v-if="cardCreated.url"><a :href="cardCreated.url" target="_blank" rel="noopener noreferrer">在 Jira 開啟 {{ cardCreated.key }}</a></p>
+            <button v-if="!cardCreated.mock" class="btn ghost sm" :disabled="cardClaiming" @click="claimCreated">
+              {{ cardClaiming ? '接取中…' : '接取到待指派刊版' }}
+            </button>
+          </template>
+        </template>
+
+        <p v-if="cardErr" class="kerr" role="alert">⚠️ {{ cardErr }}</p>
+      </div>
+
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn ghost sm" :disabled="cardDrafting || cardCreating" @click="showCreate=false">關閉</button>
+        <button class="btn sm" v-if="!cardCreated"
+                :disabled="!cardDraft || !parentReady() || cardCreating || cardDrafting"
+                @click="createCard">{{ cardCreating ? '建立中…' : '新增' }}</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 指派 Modal ============ -->
+  <div v-if="assignTarget" class="mask" @click.self="assignTarget=null">
+    <div class="modal assign-modal" role="dialog" aria-modal="true" aria-label="指派任務">
+      <div class="modal-head">
+        <div>
+          <h2>🎯 指派任務</h2>
+          <div class="sub">{{ assignTarget.key }} — {{ assignTarget.summary }}</div>
+        </div>
+        <button class="icon-btn" @click="assignTarget=null" aria-label="關閉">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="step"><span class="n">1</span><span class="t">選擇工程師</span></div>
+        <p class="step-hint">選中的工程師會以金色外框與勾選標記顯示；忙碌中的工程師無法選擇。</p>
+        <div v-if="idleCount===0" style="font-size:var(--fs-sm);color:var(--amber)">
+          目前所有工程師都在忙碌中，請等待任務完成後再指派。
+        </div>
+        <div class="opts">
+          <button v-for="e in engineerList" :key="e.id" class="opt"
+                  :class="{on:pickedEng===e.id, unavailable:e.status!=='idle'}"
+                  :aria-pressed="pickedEng===e.id" :disabled="e.status!=='idle'" @click="selectEng(e)">
+            <span class="option-heading">
+              <span class="on1"><span class="swatch" :style="{background:engColor(e.id)}"></span>{{ e.name }}</span>
+              <span class="option-state" :class="pickedEng===e.id ? 'selected' : (e.status==='idle' ? 'available' : 'blocked')">
+                {{ pickedEng===e.id ? '✓ 已選擇' : (e.status==='idle' ? '可選擇' : '無法選擇') }}
+              </span>
+            </span>
+            <span class="on2" style="font-family:inherit">
+              {{ e.status==='idle' ? '待命中' : '忙碌（' + (e.task ? e.task.key : '執行中') + '）' }}
+              <span v-if="sys.aiProvider==='codex' ? e.codexModel : e.model" style="color:var(--purple)"> · {{ sys.aiProvider==='codex' ? e.codexModel : e.model }}</span>
+            </span>
+          </button>
+        </div>
+
+        <div class="step"><span class="n">2</span><span class="t">選擇要執行的專案</span></div>
+        <p class="step-hint">鎖定的專案正在被其他任務使用，必須等它釋放後才能選擇。</p>
+        <div v-if="projects.length===0" style="font-size:var(--fs-sm);color:var(--amber)">
+          config/projects.json 尚未設定任何專案，將使用預設工作目錄執行。
+        </div>
+        <div class="opts">
+          <button v-for="p in projects" :key="p.id" class="opt"
+                  :class="{on:pickedProject===p.id, unavailable:!!locks[p.id]}"
+                  :aria-pressed="pickedProject===p.id" :disabled="!!locks[p.id]"
+                  @click="pickedProject=p.id">
+            <span class="option-heading">
+              <span class="on1">📁 {{ p.name }}</span>
+              <span class="option-state" :class="pickedProject===p.id ? 'selected' : (locks[p.id] ? 'blocked' : 'available')">
+                {{ pickedProject===p.id ? '✓ 已選擇' : (locks[p.id] ? '無法選擇' : '可選擇') }}
+              </span>
+            </span>
+            <span class="on2">{{ p.path }}</span>
+            <span v-if="locks[p.id]" class="locktag">
+              🔒 使用中：{{ locks[p.id].engineerName }} · {{ locks[p.id].taskKey }}
+            </span>
+          </button>
+        </div>
+        <p v-if="anyLocked" class="lockhint">
+          一個專案同時只能由一位工程師執行，避免兩個 AI 在同一個工作目錄互相切換 git 分支、改到同一批檔案。
+        </p>
+
+        <div class="step"><span class="n">3</span><span class="t">選擇分支方式</span></div>
+        <div class="branch-fields">
+          <label>分支方式
+            <select class="inp" v-model="branchMode" :disabled="assigning">
+              <option value="manual">我已手動切換分支</option>
+              <option value="auto">從最新基底分支自動建立（預設 develop）</option>
+            </select>
+          </label>
+          <label v-if="branchMode==='auto'">分支名稱
+            <input class="inp" v-model="branchName" :disabled="assigning" maxlength="120"
+                   :placeholder="defaultBranchName" />
+          </label>
+        </div>
+
+        <!-- 工作區還有沒 commit 的東西 -->
+        <div v-if="dirtyInfo" class="dirty-warn">
+          ⚠️ {{ dirtyInfo.message }}
+          <ul v-if="dirtyInfo.dirty.length">
+            <li v-for="d in dirtyInfo.dirty.slice(0,8)" :key="d.file">{{ d.code || '??' }} {{ d.file }}</li>
+            <li v-if="dirtyInfo.dirty.length>8">…還有 {{ dirtyInfo.dirty.length - 8 }} 個</li>
+          </ul>
+          <label>
+            <input type="checkbox" v-model="dirtyInfo.ack" />
+            我知道，仍要繼續（兩張單的變更會混在一起）
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <span style="font-size:var(--fs-xs);color:var(--text-3)">
+          唯讀 Git 檢查不需確認；切換分支、提交、還原、推送及工程師工具呼叫仍需逐次核准。
+        </span>
+        <span class="grow"></span>
+        <button class="btn ghost sm" @click="assignTarget=null">取消</button>
+        <button v-if="dirtyInfo" class="btn danger sm" :disabled="!dirtyInfo.ack || assigning"
+                @click="doAssign(true)">
+          {{ assigning ? '啟動中…' : '仍要開始執行' }}
+        </button>
+        <button v-else class="btn sm" :disabled="!canAssign || assigning" @click="doAssign(false)">
+          {{ assigning ? '啟動中…' : '開始執行' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toasts">
+    <div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">
+      <span>{{ t.type==='error' ? '⚠️' : '✅' }}</span><span>{{ t.msg }}</span>
+    </div>
+  </div>
+</div>
+
+<script src="/js/office-roles.js"></script>
+<script src="/js/office-engine.js"></script>
+<script src="/js/office-sprites.js"></script>
+<script src="/js/office-scene.js"></script>
+<script src="/js/task-status.js"></script>
+<script src="/js/dashboard-ui.js"></script>
+<script src="/js/dashboard-settings.js"></script>
+<script src="/js/dashboard-jira-card.js"></script>
+<script src="/js/dashboard-worklog.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>
